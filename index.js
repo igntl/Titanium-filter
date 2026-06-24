@@ -12,8 +12,8 @@ const client = new Client({
 
 // ====== تعديل هذي القيم ======
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "ID_الروم_اللي_الاعضاء_يرسلون_فيه";
-const DEST_CHANNEL_ID = "ID_الروم_الثاني_اللي_النتايج_تروح_فيه";
+const SOURCE_CHANNEL_ID = "1496211516020490260";
+const DEST_CHANNEL_ID = "1519325101479297176";
 // ============================
 
 const DATA_FILE = "./filterData.json";
