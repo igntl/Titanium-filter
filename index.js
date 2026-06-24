@@ -10,10 +10,10 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ====== تعديل هذي القيم ======
+// ====== تعديل القيم ======
 const TOKEN = process.env.TOKEN;
 const SOURCE_CHANNEL_ID = "1496211516020490260"; // الروم اللي يرسل فيه الاعضاء
-const DEST_CHANNEL_ID = "1519325101479297176"; // روم الاخراج
+const DEST_CHANNEL_ID = "1519325101479297176";   // روم الاخراج
 // ============================
 
 const DATA_FILE = "./filterData.json";
@@ -26,7 +26,7 @@ function loadData() {
 }
 
 function saveData(data) {
-  fs.writeJsonSync(data, { spaces: 2 });
+  fs.writeJsonSync(DATA_FILE, data, { spaces: 2 });
 }
 
 // تحليل الرسالة: فقط رسائل تحتوي على يوزر + مركز
@@ -41,18 +41,13 @@ function parseMessage(content) {
     if (VALID_POSITIONS.includes(w)) {
       if (!position) position = w;
       allPositions.push(w);
-    } else if (!username) {
-      // شرط: يوزر يجب أن يحتوي على أحرف أو أرقام فقط
-      if (/^[A-Za-z0-9|]+$/.test(word)) {
-        username = word;
-      }
+    } else if (!username && /^[A-Za-z0-9|]+$/.test(word)) {
+      username = word;
     }
   });
 
-  // تجاهل الرسائل اللي لا تحتوي على يوزر + مركز
   if (!username || allPositions.length === 0) return null;
-
-  return { username, position: position || "Unknown", allPositions };
+  return { username, position, allPositions };
 }
 
 // تحديث روم الاخراج
@@ -62,7 +57,7 @@ async function updateDestChannel(channel, data) {
   VALID_POSITIONS.forEach(pos => sortedMap[pos] = []);
 
   data.entries.forEach(e => {
-    sortedMap[e.position].push(e.username);
+    if (e.position) sortedMap[e.position].push(e.username);
   });
 
   let orderedText = "**📝 الترشيحات مرتبة حسب المراكز:**\n";
@@ -79,8 +74,12 @@ async function updateDestChannel(channel, data) {
     rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
   });
 
-  await channel.send(orderedText);
-  await channel.send(rawText);
+  try {
+    await channel.send(orderedText);
+    await channel.send(rawText);
+  } catch (err) {
+    console.error("Error sending to destination channel:", err);
+  }
 }
 
 // الحدث الرئيسي عند وصول رسالة جديدة
