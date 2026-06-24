@@ -10,13 +10,11 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ====== تعديل هذي القيم ======
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "1496211516020490260";
-const DEST_CHANNEL_ID = "1519325101479297176";
-// ============================
-
+const SOURCE_CHANNEL_ID = "1496211516020490260"; // روم الإدخال
+const DEST_CHANNEL_ID = "1519325101479297176";   // روم الإخراج
 const DATA_FILE = "./filterData.json";
+
 const VALID_POSITIONS = ["RF","CF","CM","CDM","ST","CB","RB","LB","RLB","LRB","GK"];
 
 function loadData() {
@@ -68,22 +66,48 @@ async function updateDestChannel(channel, data) {
   await channel.send(rawText);
 }
 
+// ====== جلب جميع الرسائل القديمة بدون حد ======
+async function fetchAllMessages(channel) {
+  let allMessages = [];
+  let lastId = null;
+  while (true) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+
+    const messages = await channel.messages.fetch(options);
+    if (!messages.size) break;
+
+    allMessages.push(...messages.values());
+    lastId = messages.last().id;
+  }
+  return allMessages.reverse(); // من الأقدم للأحدث
+}
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // ======= إضافة أمر !filter =======
+  // ======= أمر !filter =======
   if (message.content.toLowerCase() === "!filter") {
-    if (message.channel.id !== SOURCE_CHANNEL_ID) return;
-
-    const data = loadData();
+    const sourceChannel = await client.channels.fetch(SOURCE_CHANNEL_ID);
     const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
-    await updateDestChannel(destChannel, data);
 
+    const allMessages = await fetchAllMessages(sourceChannel);
+    const data = { entries: [] };
+
+    allMessages.forEach(msg => {
+      if (!msg.author.bot) {
+        const entry = parseMessage(msg.content);
+        if (entry) data.entries.push(entry);
+      }
+    });
+
+    saveData(data);
+    await updateDestChannel(destChannel, data);
     message.delete().catch(() => {});
     return;
   }
 
-  // أي رسالة عادية من الأعضاء في روم الإدخال
+  // أي رسالة جديدة في روم الإدخال
   if (message.channel.id === SOURCE_CHANNEL_ID) {
     const entry = parseMessage(message.content);
     if (!entry) return;
