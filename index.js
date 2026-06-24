@@ -11,21 +11,21 @@ const client = new Client({
 });
 
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "1496211516020490260";
-const DEST_CHANNEL_ID = "1519325101479297176";
+const SOURCE_CHANNEL_ID = "1496211516020490260"; // روم الترشيحات
+const DEST_CHANNEL_ID = "1519325101479297176"; // روم الإخراج
 
 const DATA_FILE = "./filterData.json";
 const VALID_POSITIONS = ["RF", "CF", "CM", "CDM", "ST", "CB", "RB", "LB", "RLB", "LRB", "GK"];
 
+// تحميل وحفظ البيانات
 function loadData() {
   return fs.existsSync(DATA_FILE) ? fs.readJsonSync(DATA_FILE) : { entries: [] };
 }
-
 function saveData(data) {
-  fs.writeJsonSync(data, { spaces: 2 });
+  fs.writeJsonSync(DATA_FILE, data, { spaces: 2 });
 }
 
-// تعديل parseMessage لأخذ الاسم كامل بدون تقطيع
+// تحليل رسالة واحده
 function parseMessage(content) {
   const words = content.split(/\s+/).filter(w => w.trim() !== "");
   let usernameParts = [];
@@ -34,22 +34,23 @@ function parseMessage(content) {
   words.forEach(word => {
     const upper = word.toUpperCase();
     if (VALID_POSITIONS.includes(upper)) {
-      if (positions.length === 0) positions.push(upper); // أول مركز
-      positions.push(upper); // كل المراكز
+      if (positions.length === 0) positions.push(upper);
+      positions.push(upper);
     } else {
-      usernameParts.push(word); // كل الكلمات الأخرى جزء من الاسم
+      usernameParts.push(word);
     }
   });
 
   if (usernameParts.length === 0 || positions.length === 0) return null;
 
-  return { 
-    username: usernameParts.join(" "), // اسم كامل بدون تقطيع
-    position: positions[0],           // أول مركز فقط للترتيب
+  return {
+    username: usernameParts.join(" "), // الاسم كامل
+    position: positions[0],           // أول مركز للترتيب
     allPositions: positions
   };
 }
 
+// إرسال الرسائل للروم الثاني
 async function updateDestChannel(channel, data) {
   const sortedMap = {};
   VALID_POSITIONS.forEach(pos => sortedMap[pos] = []);
@@ -70,13 +71,14 @@ async function updateDestChannel(channel, data) {
     rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
   });
 
-  // إرسال الرسائل على دفعات لتجنب الكراش
+  // إرسال على دفعات لتجنب أي مشاكل
   const messages = [orderedText, rawText];
   for (const msg of messages) {
     if (msg.length > 0) await channel.send(msg);
   }
 }
 
+// جلب جميع الرسائل القديمة
 async function fetchAllMessages(channel) {
   let allMessages = [];
   let lastId = null;
@@ -92,7 +94,7 @@ async function fetchAllMessages(channel) {
     lastId = messages.last().id;
   }
 
-  return allMessages.reverse(); // ترتيب من الأقدم للأحدث
+  return allMessages.reverse();
 }
 
 client.on("messageCreate", async message => {
@@ -121,7 +123,7 @@ client.on("messageCreate", async message => {
     return;
   }
 
-  // معالجة الرسائل الجديدة في روم المصدر
+  // معالجة الرسائل الجديدة فقط
   if (message.channel.id !== SOURCE_CHANNEL_ID) return;
 
   const entry = parseMessage(message.content);
