@@ -12,8 +12,8 @@ const client = new Client({
 
 // ===== إعداد القيم =====
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "ID_الشات_المصدر"; // شات الترشيحات
-const DEST_CHANNEL_ID = "ID_الشات_الاخراج"; // شات الاخراج
+const SOURCE_CHANNEL_ID = "1496211516020490260"; // شات الترشيحات
+const DEST_CHANNEL_ID = "1519325101479297176";   // شات الاخراج
 const DATA_FILE = "./filterData.json";
 
 // المراكز المسموح بها
@@ -73,7 +73,6 @@ async function updateDestChannel(channel, data) {
     rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
   });
 
-  // إرسال أو تحديث الرسائل الأخيرة
   await channel.send(orderedText);
   await channel.send(rawText);
 }
