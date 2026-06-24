@@ -12,14 +12,13 @@ const client = new Client({
 
 // ====== تعديل هذي القيم ======
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "1496211516020490260";
-const DEST_CHANNEL_ID = "1519325101479297176";
+const SOURCE_CHANNEL_ID = "1496211516020490260"; // روم الترشيحات
+const DEST_CHANNEL_ID = "1519325101479297176";  // روم الإرسال النهائي
 // ============================
 
 const DATA_FILE = "./filterData.json";
-const VALID_POSITIONS = ["RF", "CF", "CM", "CDM", "ST", "CB", "RB", "LB", "RLB", "LRB", "GK"];
+const VALID_POSITIONS = ["RF","CF","CM","CDM","ST","CB","RB","LB","RLB","LRB","GK"];
 
-// تحميل البيانات أو تهيئتها
 function loadData() {
   if (!fs.existsSync(DATA_FILE)) return { entries: [] };
   const data = fs.readJsonSync(DATA_FILE);
@@ -27,53 +26,48 @@ function loadData() {
   return data;
 }
 
-// حفظ البيانات
 function saveData(data) {
   fs.writeJsonSync(DATA_FILE, data, { spaces: 2 });
 }
 
-// تحليل الرسالة لاستخراج الاسم والمركز
+// تحليل كل رسالة: يدعم الأسماء قبل أو بعد المراكز، وأكثر من مركز
 function parseMessage(content) {
-  const words = content.split(/\s+/);
+  const words = content.split(/\s+/).filter(w => w.trim());
+  if (!words.length) return null;
+
   let username = null;
-  let position = null;
+  let firstPosition = null;
   let allPositions = [];
 
   words.forEach(word => {
-    const upper = word.toUpperCase();
-    if (VALID_POSITIONS.includes(upper) && !position) {
-      position = upper;
-      allPositions.push(upper);
-    } else if (VALID_POSITIONS.includes(upper) && position) {
-      allPositions.push(upper);
+    const up = word.toUpperCase();
+    if (VALID_POSITIONS.includes(up)) {
+      if (!firstPosition) firstPosition = up;
+      allPositions.push(up);
     } else if (!username) {
       username = word;
     }
   });
 
   if (!username) return null;
-  return { username, position: position || "Unknown", allPositions };
+  if (!firstPosition) firstPosition = "Unknown";
+
+  return { username, position: firstPosition, allPositions };
 }
 
-// تحديث الشات الثاني بالرسائل
+// يرسل الرسالتين للروم الثاني
 async function updateDestChannel(channel, data) {
-  // رسالة مرتبة حسب المراكز
   const sortedMap = {};
   VALID_POSITIONS.forEach(pos => sortedMap[pos] = []);
-
-  data.entries.forEach(e => {
-    sortedMap[e.position].push(e.username);
-  });
+  data.entries.forEach(e => sortedMap[e.position].push(e.username));
 
   let orderedText = "**📝 الترشيحات مرتبة حسب المراكز:**\n";
   Object.entries(sortedMap).forEach(([pos, users]) => {
-    if (users.length > 0) {
-      orderedText += `\n**${pos}**\n`;
-      users.forEach(u => orderedText += `${u}\n`);
+    if (users.length) {
+      orderedText += `\n**${pos}**\n${users.join("\n")}\n`;
     }
   });
 
-  // رسالة عادية لكل الإيديات والمراكز
   let rawText = "**📝 جميع الترشيحات:**\n";
   data.entries.forEach(e => {
     rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
@@ -91,15 +85,17 @@ client.on("messageCreate", async (message) => {
   if (!entry) return;
 
   const data = loadData();
-  if (!data.entries) data.entries = []; // ✅ إصلاح الخطأ
-
   data.entries.push(entry);
   saveData(data);
 
-  const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
-  await updateDestChannel(destChannel, data);
+  try {
+    const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
+    await updateDestChannel(destChannel, data);
+  } catch (err) {
+    console.error("Error sending messages:", err);
+  }
 
-  // حذف الرسائل الأصلية لتجنب الزحمة
+  // اختياري: حذف الرسائل الأصلية لتجنب الزحمة
   message.delete().catch(() => {});
 });
 
