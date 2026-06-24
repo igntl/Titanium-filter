@@ -10,36 +10,36 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// ===== تعديل القيم =====
+// ====== تعديل هذي القيم ======
 const TOKEN = process.env.TOKEN;
-const SOURCE_CHANNEL_ID = "1496211516020490260"; // شات الترشيحات
-const DEST_CHANNEL_ID = "1519325101479297176";   // شات الإخراج
-const DATA_FILE = "./filterData.json";
+const SOURCE_CHANNEL_ID = "1496211516020490260"; // الشات اللي يكتب فيه الاعضاء
+const DEST_CHANNEL_ID = "1519325101479297176";  // الشات اللي يرسل فيه البوت
+// ============================
 
 const VALID_POSITIONS = ["RF", "CF", "CM", "CDM", "ST", "CB", "RB", "LB", "RLB", "LRB", "GK"];
+const DATA_FILE = "./filterData.json";
 
-// =========================
+// تحميل البيانات
 function loadData() {
   return fs.existsSync(DATA_FILE) ? fs.readJsonSync(DATA_FILE) : { entries: [] };
 }
 
+// حفظ البيانات
 function saveData(data) {
   fs.writeJsonSync(DATA_FILE, data, { spaces: 2 });
 }
 
-// تحليل الرسالة واستخراج الاسم والمراكز
+// تحليل كل رسالة
 function parseMessage(content) {
   const words = content.split(/\s+/);
   let username = null;
-  let mainPosition = null;
+  let position = null;
   let allPositions = [];
 
   words.forEach(word => {
     const w = word.toUpperCase();
-    if (VALID_POSITIONS.includes(w) && !mainPosition) {
-      mainPosition = w;
-      allPositions.push(w);
-    } else if (VALID_POSITIONS.includes(w)) {
+    if (VALID_POSITIONS.includes(w)) {
+      if (!position) position = w;
       allPositions.push(w);
     } else if (!username) {
       username = word;
@@ -47,20 +47,15 @@ function parseMessage(content) {
   });
 
   if (!username) return null;
-
-  return {
-    username,
-    position: mainPosition || "Unknown",
-    allPositions
-  };
+  return { username, position: position || "Unknown", allPositions };
 }
 
-// إنشاء رسالتين: مرتبة وغير مرتبة
-function formatMessages(entries) {
+// تحديث القناة الهدف
+async function updateDestChannel(channel, data) {
   const sortedMap = {};
   VALID_POSITIONS.forEach(pos => sortedMap[pos] = []);
-
-  entries.forEach(e => {
+  data.entries.forEach(e => {
+    if (!sortedMap[e.position]) sortedMap[e.position] = [];
     sortedMap[e.position].push(e.username);
   });
 
@@ -73,56 +68,65 @@ function formatMessages(entries) {
   });
 
   let rawText = "**📝 جميع الترشيحات:**\n";
-  entries.forEach(e => {
-    rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
-  });
+  data.entries.forEach(e => rawText += `${e.username} ${e.allPositions.join(" ")}\n`);
 
-  return { orderedText, rawText };
+  // تقسيم الرسائل الطويلة لتجنب خطأ 2000 حرف
+  const sendChunks = async (text) => {
+    const chunks = text.match(/[\s\S]{1,1900}/g);
+    for (const chunk of chunks) await channel.send(chunk);
+  }
+
+  await sendChunks(orderedText);
+  await sendChunks(rawText);
 }
 
-// تحديث شات الإخراج
-async function updateDestChannel(entries) {
-  const channel = await client.channels.fetch(DEST_CHANNEL_ID);
-  const messages = formatMessages(entries);
-
-  // نرسل الرسالتين كرسالتين جديدتين
-  await channel.send(messages.orderedText);
-  await channel.send(messages.rawText);
-}
-
-// قراءة الرسائل القديمة والجديدة
-async function processMessages() {
+// قراءة كل الرسائل القديمة والجديدة
+async function processAllMessages() {
   const sourceChannel = await client.channels.fetch(SOURCE_CHANNEL_ID);
-  const data = loadData();
+  let data = loadData();
 
-  // جلب كل الرسائل القديمة
-  const messages = await sourceChannel.messages.fetch({ limit: 1000 });
-  messages.reverse().forEach(msg => {
-    const entry = parseMessage(msg.content);
-    if (entry) data.entries.push(entry);
-  });
+  let lastId;
+  while (true) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+    const messages = await sourceChannel.messages.fetch(options);
+    if (!messages.size) break;
+
+    messages.reverse().forEach(msg => {
+      if (msg.author.bot) return;
+      const entry = parseMessage(msg.content);
+      if (!entry) return;
+      data.entries.push(entry);
+    });
+
+    lastId = messages.first().id;
+  }
 
   saveData(data);
-  await updateDestChannel(data.entries);
+
+  const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
+  await updateDestChannel(destChannel, data);
 }
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (message.channel.id !== SOURCE_CHANNEL_ID) return;
 
-  const data = loadData();
   const entry = parseMessage(message.content);
   if (!entry) return;
 
+  const data = loadData();
   data.entries.push(entry);
   saveData(data);
-  await updateDestChannel(data.entries);
+
+  const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
+  await updateDestChannel(destChannel, data);
 });
 
-// عند تشغيل البوت، يعالج كل الرسائل القديمة
-client.on("ready", async () => {
-  console.log(`${client.user.tag} is online!`);
-  await processMessages();
+// عند تشغيل البوت، معالجة كل الرسائل القديمة
+client.once("ready", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+  await processAllMessages();
 });
 
 client.login(TOKEN);
