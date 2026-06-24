@@ -22,10 +22,10 @@ function loadData() {
   return fs.existsSync(DATA_FILE) ? fs.readJsonSync(DATA_FILE) : { entries: [] };
 }
 function saveData(data) {
-  fs.writeJsonSync(DATA_FILE, data, { spaces: 2 });
+  fs.writeJsonSync(data, { spaces: 2 });
 }
 
-// تحليل رسالة واحده
+// تحليل الرسائل
 function parseMessage(content) {
   const words = content.split(/\s+/).filter(w => w.trim() !== "");
   let usernameParts = [];
@@ -45,13 +45,14 @@ function parseMessage(content) {
 
   return {
     username: usernameParts.join(" "), // الاسم كامل
-    position: positions[0],           // أول مركز للترتيب
+    position: positions[0],           // أول مركز
     allPositions: positions
   };
 }
 
-// إرسال الرسائل للروم الثاني
+// إرسال الرسائل
 async function updateDestChannel(channel, data) {
+  if (!channel) return;
   const sortedMap = {};
   VALID_POSITIONS.forEach(pos => sortedMap[pos] = []);
   data.entries.forEach(e => {
@@ -71,14 +72,15 @@ async function updateDestChannel(channel, data) {
     rawText += `${e.username} ${e.allPositions.join(" ")}\n`;
   });
 
-  // إرسال على دفعات لتجنب أي مشاكل
-  const messages = [orderedText, rawText];
-  for (const msg of messages) {
-    if (msg.length > 0) await channel.send(msg);
+  try {
+    if (orderedText.length > 0) await channel.send({ content: orderedText });
+    if (rawText.length > 0) await channel.send({ content: rawText });
+  } catch (err) {
+    console.error("حدث خطأ عند الإرسال لروم الإخراج:", err);
   }
 }
 
-// جلب جميع الرسائل القديمة
+// جلب كل الرسائل القديمة
 async function fetchAllMessages(channel) {
   let allMessages = [];
   let lastId = null;
@@ -88,7 +90,7 @@ async function fetchAllMessages(channel) {
     if (lastId) options.before = lastId;
 
     const messages = await channel.messages.fetch(options);
-    if (messages.size === 0) break;
+    if (!messages || messages.size === 0) break;
 
     allMessages = allMessages.concat(Array.from(messages.values()));
     lastId = messages.last().id;
@@ -105,8 +107,13 @@ client.on("messageCreate", async message => {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
     message.delete().catch(() => {});
 
-    const sourceChannel = await client.channels.fetch(SOURCE_CHANNEL_ID);
-    const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
+    const sourceChannel = await client.channels.fetch(SOURCE_CHANNEL_ID).catch(() => null);
+    const destChannel = await client.channels.fetch(DEST_CHANNEL_ID).catch(() => null);
+
+    if (!sourceChannel || !destChannel) {
+      console.error("روم المصدر أو الإخراج غير موجود أو البوت لا يملك صلاحية الوصول.");
+      return;
+    }
 
     const messages = await fetchAllMessages(sourceChannel);
     const data = loadData();
@@ -123,7 +130,7 @@ client.on("messageCreate", async message => {
     return;
   }
 
-  // معالجة الرسائل الجديدة فقط
+  // معالجة الرسائل الجديدة
   if (message.channel.id !== SOURCE_CHANNEL_ID) return;
 
   const entry = parseMessage(message.content);
@@ -133,8 +140,12 @@ client.on("messageCreate", async message => {
   data.entries.push(entry);
   saveData(data);
 
-  const destChannel = await client.channels.fetch(DEST_CHANNEL_ID);
-  await updateDestChannel(destChannel, data);
+  const destChannel = await client.channels.fetch(DEST_CHANNEL_ID).catch(() => null);
+  if (destChannel) await updateDestChannel(destChannel, data);
+});
+
+client.once("ready", () => {
+  console.log("Filter Bot Ready!");
 });
 
 client.login(TOKEN);
